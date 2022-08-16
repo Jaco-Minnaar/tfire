@@ -9,6 +9,8 @@ use std::{
 use termion::{
     color::{self, Rgb},
     cursor::{self, HideCursor},
+    event::Key,
+    input::{Keys, TermRead},
     raw::{IntoRawMode, RawTerminal},
 };
 
@@ -60,14 +62,25 @@ fn main() {
         loop {
             terminal.next_frame();
 
-            if let Ok(_) = stop_rx.try_recv() {
-                terminal.stop_flames();
+            match stop_rx.try_recv() {
+                Ok(false) => terminal.stop_flames(),
+                Ok(true) => break,
+                Err(_) => (),
+            }
+
+            if terminal.done {
+                break;
             }
         }
     });
 
-    stdin().lock().bytes().next().unwrap().unwrap();
-    stop_tx.send(true).unwrap();
+    let key = stdin().lock().keys().next().unwrap().unwrap();
+
+    let val = match key {
+        Key::Ctrl('c') | Key::Ctrl('d') => true,
+        _ => false,
+    };
+    stop_tx.send(val).unwrap();
 
     handle.join().unwrap();
 }
@@ -75,44 +88,49 @@ fn main() {
 struct Terminal<W: Write> {
     width: usize,
     height: usize,
-    frame_buffer: Vec<usize>,
+    read_frame_buffer: Vec<usize>,
+    write_frame_buffer: Vec<usize>,
     out: W,
     stop: bool,
+    pub done: bool,
 }
 
 impl<W: Write> Terminal<W> {
     fn draw(&mut self) {
-        // for i in 0..self.frame_buffer.len() {
-        //     let index = self.frame_buffer[s]
-        //     let x = i % self.width + 1;
-        //     let y = i / self.width + 1;
-        //
-        //     write!(
-        //         self.out,
-        //         "{}{}█",
-        //         cursor::Goto(x as u16, y as u16),
-        //         color::Fg(COLORS[self.frame_buffer[i]])
-        //     )
-        //     .unwrap();
-        // }
-
+        let mut has_color = false;
         for y in 0..self.height {
             for x in 0..self.width {
-                let index = self.frame_buffer[y * self.width + x];
+                let new_index = self.write_frame_buffer[y * self.width + x];
+                let index = self.read_frame_buffer[y * self.width + x];
 
                 let color = COLORS[index];
+                let new_color = COLORS[new_index];
+
+                if !has_color && index != 0 {
+                    has_color = true;
+                }
+
+                if color == new_color {
+                    continue;
+                }
 
                 write!(
                     self.out,
                     "{}{}█",
                     cursor::Goto((x + 1) as u16, (y + 1) as u16),
-                    color::Fg(color)
+                    color::Fg(new_color)
                 )
                 .unwrap();
             }
         }
 
         self.out.flush().unwrap();
+
+        self.read_frame_buffer = self.write_frame_buffer.clone();
+
+        if !has_color {
+            self.done = true;
+        }
     }
 
     fn next_frame(&mut self) {
@@ -131,12 +149,13 @@ impl<W: Write> Terminal<W> {
     }
 
     fn spread_fire(&mut self, from: usize, coef: f32) {
-        if self.frame_buffer[from] == 0 {
-            self.frame_buffer[from - self.width] = 0;
+        if self.write_frame_buffer[from] == 0 {
+            self.write_frame_buffer[from - self.width] = 0;
         } else {
             let rand_val = (coef * 3.0).round() as usize;
             let to = (from - self.width).saturating_sub(rand_val);
-            self.frame_buffer[to] = self.frame_buffer[from].saturating_sub(rand_val & 1);
+            self.write_frame_buffer[to] =
+                self.write_frame_buffer[from].saturating_sub(rand_val & 1);
         }
     }
 
@@ -148,8 +167,8 @@ impl<W: Write> Terminal<W> {
         for y in (self.height - 5..self.height).rev() {
             for x in 0..self.width {
                 let pos = y * self.width + x;
-                if self.frame_buffer[pos] > 0 {
-                    self.frame_buffer[pos] -= (rand::random::<f32>()).round() as usize & 3;
+                if self.write_frame_buffer[pos] > 0 {
+                    self.write_frame_buffer[pos] -= (rand::random::<f32>()).round() as usize & 3;
                 }
             }
         }
@@ -175,9 +194,11 @@ impl Default for Terminal<HideCursor<RawTerminal<StdoutLock<'_>>>> {
         let mut terminal = Self {
             width,
             height,
-            frame_buffer,
+            read_frame_buffer: frame_buffer.clone(),
+            write_frame_buffer: frame_buffer,
             out: writer,
             stop: false,
+            done: false,
         };
 
         terminal.draw();
