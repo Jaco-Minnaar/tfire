@@ -2,6 +2,11 @@
 name = "tfire"
 version = "0.1.0"
 edition = "2021"
+repository = "https://gitlab.com/Jaco-Minnaar/tfire"
+homepage = "https://gitlab.com/Jaco-Minnaar/tfire"
+keywords = ["terminal", "graphics", "fire", "doom"]
+categories = ["command-line-utilities", "visualization", "games"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
