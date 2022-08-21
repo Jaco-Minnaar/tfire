@@ -1,11 +1,11 @@
 use lazy_static::lazy_static;
 use rand::Rng;
 use std::{
-    io::{stdin, stdout, Read, Stdout, StdoutLock, Write},
+    io::{stdin, stdout, StdoutLock, Write},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
-        Arc, Mutex,
+        Arc,
     },
     thread,
     time::Duration,
@@ -14,7 +14,7 @@ use termion::{
     color::{self, Rgb},
     cursor::{self, HideCursor},
     event::Key,
-    input::{Keys, TermRead},
+    input::TermRead,
     raw::{IntoRawMode, RawTerminal},
 };
 
@@ -121,6 +121,7 @@ fn main() {
     stop_tx.send(val).unwrap();
 
     handle.join().unwrap();
+    println!();
 }
 
 struct BufferContainer {
@@ -236,16 +237,14 @@ impl Terminal<HideCursor<RawTerminal<StdoutLock<'static>>>> {
             frame_buffer[i] = 35;
         }
 
-        let mut terminal = Self {
+        Self {
             width,
             height,
             buffer_rx,
             signal_tx,
             frame_buffer: frame_buffer.clone(),
             out: writer,
-        };
-
-        terminal
+        }
     }
 }
 
